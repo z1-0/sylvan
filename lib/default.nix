@@ -228,7 +228,7 @@ flake-parts.lib.mkFlake { inputs = userInputs; } {
   flake = {
     nixosConfigurations = mapAttrs mkHost (hostsFor "linux");
     darwinConfigurations = mapAttrs mkHost (hostsFor "darwin");
-    inherit overlays;
+    inherit overlays tree;
   };
 
   perSystem = { pkgs, ... }: {
