@@ -30,8 +30,6 @@ let
 
   inherit (builtins)
     attrNames
-    filter
-    hasAttr
     head
     isFunction
     isString
@@ -195,9 +193,7 @@ let
 
       mods = moduleSets.${host.platform};
 
-      validUsers = filter (u: hasAttr u mods.homeUsers) host.users;
-
-      hmModules = optionals (validUsers != [ ] && home-manager != null) [
+      hmModules = optionals (home-manager != null) [
         b.hm
         {
           home-manager = {
@@ -206,7 +202,7 @@ let
             useGlobalPkgs = true;
             useUserPackages = true;
 
-            users = genAttrs validUsers (
+            users = genAttrs host.users (
               u: { osConfig, ... }: {
                 home.stateVersion = mkDefault osConfig.system.stateVersion;
                 imports = mods.homeUsers.${u} or [ ];
