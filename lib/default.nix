@@ -156,7 +156,7 @@ let
   hostPlatforms = unique (map (h: h.platform) (attrValues hosts));
   moduleSystems = unique (defaultSystems ++ hostPlatforms);
 
-  mkMetaModules =
+  loadMetaModules =
     pkgs:
     let
       raw = metatree.lib.load pkgs (root + "/modules");
@@ -164,8 +164,10 @@ let
     if raw == null then { } else metatree.lib.toAttrs raw;
 
   metaModuleSets = genAttrs hostPlatforms (
-    system: mkMetaModules nixpkgs.legacyPackages.${system}
+    system: loadMetaModules nixpkgs.legacyPackages.${system}
   );
+
+  mkMetaModules = pkgs: metaModuleSets.${pkgs.system} or (loadMetaModules pkgs);
 
   loadModules =
     system:
