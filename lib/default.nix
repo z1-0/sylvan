@@ -24,6 +24,7 @@ let
     mkOption
     nameValuePair
     optionals
+    recursiveUpdate
     types
     unique
     ;
@@ -196,19 +197,15 @@ let
 
       mods = moduleSets.${host.platform};
 
-      inputs' = userInputs // {
-        self = (userInputs.self or { }) // {
-          lib = ((userInputs.self or { }).lib or { }) // {
-            metaModules = metaModuleSets.${host.platform};
-          };
-        };
+      hostInputs = recursiveUpdate userInputs {
+        self.lib.metaModules = metaModuleSets.${host.platform};
       };
 
       hmModules = optionals (home-manager != null) [
         b.hm
         {
           home-manager = {
-            extraSpecialArgs.inputs = inputs';
+            extraSpecialArgs.inputs = hostInputs;
             sharedModules = mods.homeShared;
             useGlobalPkgs = true;
             useUserPackages = true;
@@ -226,7 +223,7 @@ let
     b.build {
       modules = host.modules ++ mods.shared ++ (b.osMods mods) ++ hmModules;
 
-      specialArgs.inputs = inputs';
+      specialArgs.inputs = hostInputs;
       system = host.platform;
     };
 
