@@ -39,8 +39,6 @@ let
     tryEval
     ;
 
-  # Tree helpers
-
   leaves = node: if node == null then [ ] else srctree.lib.alg.leaves node;
 
   leafContents = node: map (n: n.content) (leaves node);
@@ -50,8 +48,6 @@ let
   mapChildren = f: node: listToAttrs (map (c: nameValuePair c.name (f c)) (children node));
 
   childContents = mapChildren (n: n.content);
-
-  # Platform helpers
 
   osOf =
     system:
@@ -76,8 +72,6 @@ let
       hm = home-manager.darwinModules.home-manager;
     };
   };
-
-  # Safe evaluation
 
   try =
     v:
@@ -140,16 +134,14 @@ let
     else
       null;
 
-  # Source tree
-
   rawTree = srctree.lib.load root;
-  tree = if rawTree == null then { } else srctree.lib.toAttrs rawTree;
+  rootTree = if rawTree == null then { } else srctree.lib.toAttrs rawTree;
 
-  packageDefs = childContents (tree.packages or null);
-  overlays = childContents (tree.overlays or null);
+  packageDefs = childContents (rootTree.packages or null);
+  overlays = childContents (rootTree.overlays or null);
 
   hosts = filterAttrs (_: h: h != null && !(h.os == "darwin" && nix-darwin == null)) (
-    mapChildren discoverHost (tree.hosts or null)
+    mapChildren discoverHost (rootTree.hosts or null)
   );
 
   hostsFor = os: filterAttrs (_: h: h.os == os) hosts;
@@ -164,14 +156,21 @@ let
   hostPlatforms = unique (map (h: h.platform) (attrValues hosts));
   moduleSystems = unique (defaultSystems ++ hostPlatforms);
 
-  # Shared modules
+  mkMetaModules =
+    pkgs:
+    let
+      raw = metatree.lib.load pkgs (root + "/modules");
+    in
+    if raw == null then { } else metatree.lib.toAttrs raw;
+
+  metaModuleSets = genAttrs hostPlatforms (
+    system: mkMetaModules nixpkgs.legacyPackages.${system}
+  );
 
   loadModules =
     system:
     let
-      pkgs = nixpkgs.legacyPackages.${system};
-      raw = metatree.lib.load pkgs (root + "/modules");
-      attrs = if raw == null then { } else metatree.lib.toAttrs raw;
+      attrs = metaModuleSets.${system};
       home = attrs.home or { };
     in
     {
@@ -182,9 +181,7 @@ let
       homeUsers = mapChildren leafContents (home.users or null);
     };
 
-  moduleSets = genAttrs moduleSystems loadModules;
-
-  # Host builder
+  moduleSets = genAttrs hostPlatforms loadModules;
 
   mkHost =
     name: host:
@@ -193,11 +190,19 @@ let
 
       mods = moduleSets.${host.platform};
 
+      inputs' = userInputs // {
+        self = (userInputs.self or { }) // {
+          lib = ((userInputs.self or { }).lib or { }) // {
+            metaModules = metaModuleSets.${host.platform};
+          };
+        };
+      };
+
       hmModules = optionals (home-manager != null) [
         b.hm
         {
           home-manager = {
-            extraSpecialArgs.inputs = userInputs;
+            extraSpecialArgs.inputs = inputs';
             sharedModules = mods.homeShared;
             useGlobalPkgs = true;
             useUserPackages = true;
@@ -215,7 +220,7 @@ let
     b.build {
       modules = host.modules ++ mods.shared ++ (b.osMods mods) ++ hmModules;
 
-      specialArgs.inputs = userInputs;
+      specialArgs.inputs = inputs';
       system = host.platform;
     };
 
@@ -223,12 +228,18 @@ in
 flake-parts.lib.mkFlake { inputs = userInputs; } {
   systems = moduleSystems;
 
-  imports = leafContents (tree.flake or null);
+  imports = leafContents (rootTree.flake or null);
 
   flake = {
     nixosConfigurations = mapAttrs mkHost (hostsFor "linux");
     darwinConfigurations = mapAttrs mkHost (hostsFor "darwin");
-    inherit overlays tree;
+
+    lib = {
+      inherit rootTree;
+      metaModulesFor = mkMetaModules;
+    };
+
+    inherit overlays;
   };
 
   perSystem = { pkgs, ... }: {
