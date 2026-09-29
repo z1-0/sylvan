@@ -30,6 +30,7 @@ let
 
   inherit (builtins)
     attrNames
+    functionArgs
     head
     isFunction
     isString
@@ -137,8 +138,13 @@ let
   rawTree = srctree.lib.load root;
   rootTree = if rawTree == null then { } else srctree.lib.toAttrs rawTree;
 
+  # `{ inputs, ... }: final: prev: { }` overlays get their arguments applied here:
+  # nixpkgs calls with `final prev`, and the pattern match would force `final` too early.
+  applyOverlayArgs =
+    def: if isFunction def && (functionArgs def) != { } then def { inputs = userInputs; } else def;
+
   packageDefs = childContents (rootTree.packages or null);
-  overlays = childContents (rootTree.overlays or null);
+  overlays = mapAttrs (_: applyOverlayArgs) (childContents (rootTree.overlays or null));
 
   hosts = filterAttrs (_: h: h != null && !(h.os == "darwin" && nix-darwin == null)) (
     mapChildren discoverHost (rootTree.hosts or null)
@@ -163,9 +169,7 @@ let
     in
     if raw == null then { } else metatree.lib.toAttrs raw;
 
-  metaModuleSets = genAttrs hostPlatforms (
-    system: loadMetaModules nixpkgs.legacyPackages.${system}
-  );
+  metaModuleSets = genAttrs hostPlatforms (system: loadMetaModules nixpkgs.legacyPackages.${system});
 
   mkMetaModules = pkgs: metaModuleSets.${pkgs.system} or (loadMetaModules pkgs);
 
