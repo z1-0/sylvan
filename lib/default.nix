@@ -130,6 +130,7 @@ let
     in
     if host != null && os != null then
       {
+        name = node.name;
         inherit modules os;
         inherit (host) platform users;
       }
@@ -201,6 +202,10 @@ let
         self.lib.metaModules = metaModuleSets.${host.platform};
       };
 
+      osDefaults = {
+        networking.hostName = mkDefault name;
+      };
+
       hmModules = optionals (home-manager != null) [
         b.hm
         {
@@ -221,7 +226,14 @@ let
       ];
     in
     b.build {
-      modules = host.modules ++ mods.shared ++ (b.osMods mods) ++ hmModules;
+      modules =
+        host.modules
+        ++ [
+          osDefaults
+        ]
+        ++ mods.shared
+        ++ (b.osMods mods)
+        ++ hmModules;
 
       specialArgs.inputs = hostInputs;
       system = host.platform;
