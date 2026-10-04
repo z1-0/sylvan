@@ -20,6 +20,4 @@
     isNormalUser = true;
     extraGroups = [ "wheel" ];
   };
-
-  system.stateVersion = lib.versions.majorMinor lib.version;
 }

@@ -14,6 +14,4 @@
       "docker"
     ];
   };
-
-  system.stateVersion = lib.versions.majorMinor lib.version;
 }

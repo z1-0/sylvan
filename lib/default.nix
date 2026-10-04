@@ -64,14 +64,26 @@ let
   builders = {
     linux = {
       build = nixpkgs.lib.nixosSystem;
-      osMods = mods: mods.nixos;
       hm = home-manager.nixosModules.home-manager;
+      osMods = mods: mods.nixos;
+
+      osDefaults =
+        { config, ... }:
+        {
+          system.stateVersion = mkDefault config.system.nixos.release;
+        };
     };
 
     darwin = {
       build = nix-darwin.lib.darwinSystem;
-      osMods = mods: mods.darwin;
       hm = home-manager.darwinModules.home-manager;
+      osMods = mods: mods.darwin;
+
+      osDefaults =
+        { config, ... }:
+        {
+          system.stateVersion = mkDefault config.system.maxStateVersion;
+        };
     };
   };
 
@@ -230,6 +242,7 @@ let
         host.modules
         ++ [
           osDefaults
+          b.osDefaults
         ]
         ++ mods.shared
         ++ (b.osMods mods)
