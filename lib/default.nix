@@ -228,8 +228,8 @@ let
             useUserPackages = true;
 
             users = genAttrs host.users (
-              u: { osConfig, ... }: {
-                home.stateVersion = mkDefault osConfig.system.stateVersion;
+              u: { config, ... }: {
+                home.stateVersion = mkDefault config.home.version.release;
                 imports = mods.homeUsers.${u} or [ ];
               }
             );
