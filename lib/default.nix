@@ -27,10 +27,12 @@ let
     recursiveUpdate
     types
     unique
+    warn
     ;
 
   inherit (builtins)
     attrNames
+    deepSeq
     functionArgs
     head
     isFunction
@@ -87,12 +89,7 @@ let
     };
   };
 
-  try =
-    v:
-    let
-      r = tryEval v;
-    in
-    if r.success then r.value else null;
+  tryDeep = v: tryEval (deepSeq v v);
 
   probeModule = {
     options = {
@@ -137,17 +134,26 @@ let
     node:
     let
       modules = leafContents node;
-      host = try (probeHost modules);
-      os = osOf host.platform;
+      probe = probeHost modules;
+      platform = tryDeep probe.platform;
     in
-    if host != null && os != null then
-      {
-        name = node.name;
-        inherit modules os;
-        inherit (host) platform users;
-      }
+    if !platform.success then
+      warn "sylvan skipped host `${node.name}' because evaluating `nixpkgs.hostPlatform' / `nixpkgs.system' failed." null
+    else if platform.value == null then
+      warn "sylvan skipped host `${node.name}' because neither `nixpkgs.hostPlatform' nor `nixpkgs.system' is set." null
     else
-      null;
+      let
+        os = osOf platform.value;
+      in
+      if os == null then
+        warn "sylvan skipped host `${node.name}' because `nixpkgs.hostPlatform' / `nixpkgs.system' is not a Linux or Darwin system string." null
+      else
+        {
+          name = node.name;
+          inherit modules os;
+          platform = platform.value;
+          inherit (probe) users;
+        };
 
   rawTree = srctree.lib.load root;
   rootTree = if rawTree == null then { } else srctree.lib.toAttrs rawTree;
