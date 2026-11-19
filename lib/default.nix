@@ -34,12 +34,10 @@ let
     attrNames
     deepSeq
     functionArgs
-    head
     isFunction
     isString
     listToAttrs
     mapAttrs
-    match
     tryEval
     ;
 
@@ -53,15 +51,27 @@ let
 
   childContents = mapChildren (n: n.content);
 
-  osOf =
+  resolvePlatform =
     system:
-    if isString system then
-      let
-        m = match ".*-(linux|darwin)" system;
-      in
-      if m == null then null else head m
+    if !isString system then
+      null
     else
-      null;
+      let
+        elaborated = tryEval (nixpkgsLib.systems.elaborate system);
+      in
+      if !elaborated.success then
+        null
+      else
+        let
+          kernel = elaborated.value.parsed.kernel.name;
+        in
+        if kernel == "linux" || kernel == "darwin" then
+          {
+            inherit kernel;
+            system = elaborated.value.system;
+          }
+        else
+          null;
 
   builders = {
     linux = {
@@ -143,15 +153,16 @@ let
       warn "sylvan skipped host `${node.name}' because neither `nixpkgs.hostPlatform' nor `nixpkgs.system' is set." null
     else
       let
-        os = osOf platform.value;
+        resolved = resolvePlatform platform.value;
       in
-      if os == null then
-        warn "sylvan skipped host `${node.name}' because `nixpkgs.hostPlatform' / `nixpkgs.system' is not a Linux or Darwin system string." null
+      if resolved == null then
+        warn "sylvan skipped host `${node.name}' because it targets `${platform.value}', but sylvan only builds NixOS and nix-darwin hosts." null
       else
         {
           name = node.name;
-          inherit modules os;
-          platform = platform.value;
+          inherit modules;
+          os = resolved.kernel;
+          platform = resolved.system;
           inherit (probe) users;
         };
 
