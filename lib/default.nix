@@ -33,6 +33,7 @@ let
   inherit (builtins)
     attrNames
     deepSeq
+    elem
     functionArgs
     isAttrs
     isFunction
@@ -53,29 +54,39 @@ let
 
   childContents = mapChildren (n: n.content);
 
-  describePlatform =
-    platform:
-    if isString platform then
-      platform
-    else if isAttrs platform then
-      let
-        inner = platform.config or platform.system or null;
-      in
-      if isString inner then
-        inner
-      else if inner == null then
-        "an attribute set without a string `config' or `system'"
-      else
-        "an attribute set whose `config' / `system' is of type ${typeOf inner}"
-    else
-      "a value of type ${typeOf platform}";
-
+  # Kernel and system of the platform a host declares, or why it has none.
+  #
+  # { success = true;  value = { kernel; system; }; }
+  # { success = false; error = "why the host cannot be built"; }
   resolvePlatform =
     platform:
-    if
-      !(isString platform || (isAttrs platform && isString (platform.config or platform.system or null)))
-    then
-      { status = "invalid"; }
+    let
+      declared =
+        if isString platform then
+          platform
+        else if isAttrs platform then
+          platform.config or platform.system or null
+        else
+          null;
+
+      error =
+        if isString declared then
+          null
+        else if isAttrs platform then
+          if declared == null then
+            "`nixpkgs.hostPlatform' / `nixpkgs.system' is an attribute set without a string `config' or `system'."
+          else
+            "`nixpkgs.hostPlatform' / `nixpkgs.system' is an attribute set whose `config' / `system' is of type ${typeOf declared}."
+        else
+          "`nixpkgs.hostPlatform' / `nixpkgs.system' is a value of type ${typeOf platform}.";
+
+      unsupported = "it targets `${declared}', but only NixOS and nix-darwin hosts are supported.";
+    in
+    if error != null then
+      {
+        success = false;
+        inherit error;
+      }
     else
       let
         elaborated = tryDeep (
@@ -88,15 +99,16 @@ let
           }
         );
       in
-      if !elaborated.success then
-        { status = "unsupported"; }
-      else if elaborated.value.kernel == "linux" || elaborated.value.kernel == "darwin" then
+      if elaborated.success && elem elaborated.value.kernel (attrNames builders) then
         {
-          status = "supported";
-          inherit (elaborated.value) kernel system;
+          success = true;
+          value = { inherit (elaborated.value) kernel system; };
         }
       else
-        { status = "unsupported"; };
+        {
+          success = false;
+          error = unsupported;
+        };
 
   builders = {
     linux = {
@@ -181,16 +193,14 @@ let
         raw = platform.value;
         resolved = resolvePlatform raw;
       in
-      if resolved.status == "invalid" then
-        warn "sylvan skipped host `${node.name}' because `nixpkgs.hostPlatform' / `nixpkgs.system' is ${describePlatform raw}." null
-      else if resolved.status == "unsupported" then
-        warn "sylvan skipped host `${node.name}' because it targets `${describePlatform raw}', but only NixOS and nix-darwin hosts are supported." null
+      if !resolved.success then
+        warn "sylvan skipped host `${node.name}' because ${resolved.error}" null
       else
         {
           inherit modules;
           inherit (node) name;
           inherit (probe) users;
-          inherit (resolved) kernel system;
+          inherit (resolved.value) kernel system;
         };
 
   rawTree = srctree.lib.load root;
