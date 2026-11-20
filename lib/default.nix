@@ -210,7 +210,13 @@ let
   applyOverlayArgs =
     def: if isFunction def && (functionArgs def) ? inputs then def { inputs = userInputs; } else def;
 
-  packageDefs = childContents (rootTree.packages or null);
+  packageDefs = mapChildren (
+    n:
+    if n.type == "file" then
+      n.content
+    else
+      throw "sylvan: `${n.path}' is a directory, but `packages/' must be flat"
+  ) (rootTree.packages or null);
   overlays = mapAttrs (_: applyOverlayArgs) (childContents (rootTree.overlays or null));
 
   hosts = filterAttrs (_: h: h != null && !(h.kernel == "darwin" && nix-darwin == null)) (
