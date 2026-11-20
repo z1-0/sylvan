@@ -169,10 +169,9 @@ let
   rawTree = srctree.lib.load root;
   rootTree = if rawTree == null then { } else srctree.lib.toAttrs rawTree;
 
-  # `{ inputs, ... }: final: prev: { }` overlays get their arguments applied here:
-  # nixpkgs calls with `final prev`, and the pattern match would force `final` too early.
+  # `{ inputs }: final: prev: { }` overlays get the flake inputs; plain overlays pass through.
   applyOverlayArgs =
-    def: if isFunction def && (functionArgs def) != { } then def { inputs = userInputs; } else def;
+    def: if isFunction def && (functionArgs def) ? inputs then def { inputs = userInputs; } else def;
 
   packageDefs = childContents (rootTree.packages or null);
   overlays = mapAttrs (_: applyOverlayArgs) (childContents (rootTree.overlays or null));
