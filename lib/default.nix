@@ -190,8 +190,7 @@ let
           inherit modules;
           inherit (node) name;
           inherit (probe) users;
-          os = resolved.kernel;
-          platform = resolved.system;
+          inherit (resolved) kernel system;
         };
 
   rawTree = srctree.lib.load root;
@@ -204,11 +203,11 @@ let
   packageDefs = childContents (rootTree.packages or null);
   overlays = mapAttrs (_: applyOverlayArgs) (childContents (rootTree.overlays or null));
 
-  hosts = filterAttrs (_: h: h != null && !(h.os == "darwin" && nix-darwin == null)) (
+  hosts = filterAttrs (_: h: h != null && !(h.kernel == "darwin" && nix-darwin == null)) (
     mapChildren discoverHost (rootTree.hosts or null)
   );
 
-  hostsFor = os: filterAttrs (_: h: h.os == os) hosts;
+  hostsFor = kernel: filterAttrs (_: h: h.kernel == kernel) hosts;
 
   defaultSystems = [
     "x86_64-linux"
@@ -217,7 +216,7 @@ let
     "aarch64-darwin"
   ];
 
-  hostPlatforms = unique (map (h: h.platform) (attrValues hosts));
+  hostPlatforms = unique (map (h: h.system) (attrValues hosts));
   moduleSystems = unique (defaultSystems ++ hostPlatforms);
 
   loadMetaModules =
@@ -250,12 +249,12 @@ let
   mkHost =
     name: host:
     let
-      b = builders.${host.os};
+      b = builders.${host.kernel};
 
-      mods = moduleSets.${host.platform};
+      mods = moduleSets.${host.system};
 
       hostInputs = recursiveUpdate userInputs {
-        self.lib.metaModules = metaModuleSets.${host.platform};
+        self.lib.metaModules = metaModuleSets.${host.system};
       };
 
       osDefaults = {
@@ -293,7 +292,6 @@ let
         ++ hmModules;
 
       specialArgs.inputs = hostInputs;
-      system = host.platform;
     };
 
 in
