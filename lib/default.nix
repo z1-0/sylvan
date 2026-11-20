@@ -34,11 +34,13 @@ let
     attrNames
     deepSeq
     functionArgs
+    isAttrs
     isFunction
     isString
     listToAttrs
     mapAttrs
     tryEval
+    typeOf
     ;
 
   leaves = node: if node == null then [ ] else srctree.lib.alg.leaves node;
@@ -51,27 +53,50 @@ let
 
   childContents = mapChildren (n: n.content);
 
+  describePlatform =
+    platform:
+    if isString platform then
+      platform
+    else if isAttrs platform then
+      let
+        inner = platform.config or platform.system or null;
+      in
+      if isString inner then
+        inner
+      else if inner == null then
+        "an attribute set without a string `config' or `system'"
+      else
+        "an attribute set whose `config' / `system' is of type ${typeOf inner}"
+    else
+      "a value of type ${typeOf platform}";
+
   resolvePlatform =
-    system:
-    if !isString system then
-      null
+    platform:
+    if
+      !(isString platform || (isAttrs platform && isString (platform.config or platform.system or null)))
+    then
+      { status = "invalid"; }
     else
       let
-        elaborated = tryEval (nixpkgsLib.systems.elaborate system);
+        elaborated = tryDeep (
+          let
+            e = nixpkgsLib.systems.elaborate platform;
+          in
+          {
+            inherit (e) system;
+            kernel = e.parsed.kernel.name;
+          }
+        );
       in
       if !elaborated.success then
-        null
+        { status = "unsupported"; }
+      else if elaborated.value.kernel == "linux" || elaborated.value.kernel == "darwin" then
+        {
+          status = "supported";
+          inherit (elaborated.value) kernel system;
+        }
       else
-        let
-          kernel = elaborated.value.parsed.kernel.name;
-        in
-        if kernel == "linux" || kernel == "darwin" then
-          {
-            inherit kernel;
-            system = elaborated.value.system;
-          }
-        else
-          null;
+        { status = "unsupported"; };
 
   builders = {
     linux = {
@@ -153,17 +178,20 @@ let
       warn "sylvan skipped host `${node.name}' because neither `nixpkgs.hostPlatform' nor `nixpkgs.system' is set." null
     else
       let
-        resolved = resolvePlatform platform.value;
+        raw = platform.value;
+        resolved = resolvePlatform raw;
       in
-      if resolved == null then
-        warn "sylvan skipped host `${node.name}' because it targets `${platform.value}', but sylvan only builds NixOS and nix-darwin hosts." null
+      if resolved.status == "invalid" then
+        warn "sylvan skipped host `${node.name}' because `nixpkgs.hostPlatform' / `nixpkgs.system' is ${describePlatform raw}." null
+      else if resolved.status == "unsupported" then
+        warn "sylvan skipped host `${node.name}' because it targets `${describePlatform raw}', but only NixOS and nix-darwin hosts are supported." null
       else
         {
-          name = node.name;
           inherit modules;
+          inherit (node) name;
+          inherit (probe) users;
           os = resolved.kernel;
           platform = resolved.system;
-          inherit (probe) users;
         };
 
   rawTree = srctree.lib.load root;
@@ -222,7 +250,7 @@ let
   mkHost =
     name: host:
     let
-      b = builders.${host.os} or (throw "unsupported host platform: ${host.platform}");
+      b = builders.${host.os};
 
       mods = moduleSets.${host.platform};
 
