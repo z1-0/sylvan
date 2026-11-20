@@ -62,6 +62,8 @@ That is the whole flake; the rest is files on disk.
 }
 ```
 
+`nixpkgs.hostPlatform` accepts a system string (`"x86_64-linux"`) or a platform attribute set (`{ system = "x86_64-linux"; }`, `{ config = "x86_64-unknown-linux-gnu"; }`). sylvan normalizes whatever it gets to the plain system name, so the value never leaks an ABI suffix into `systems`.
+
 ### 3. Add modules
 
 ```nix
@@ -135,7 +137,12 @@ All directories are optional. Only `.nix` files are read; `packages/` and `overl
 > [!TIP]
 > `networking.hostName` defaults to the host directory name, and `system.stateVersion` follows the platform's current release. Both are `mkDefault`, so set them explicitly when you need to pin a release.
 
-sylvan skips a host it cannot build and warns with the reason: no platform set, a failed evaluation, a non-string platform, or a kernel other than Linux or darwin.
+sylvan skips a host it cannot build and warns with the reason: no platform set, a failed evaluation, a platform value that is neither a system string nor a platform attribute set, or a kernel other than Linux or darwin.
+
+> [!IMPORTANT]
+> The platform has to live in the host's own directory. sylvan picks `modules/nixos` or `modules/darwin` from that value, so reading it from `modules/` would be circular; a host that sets it elsewhere is skipped with "neither `nixpkgs.hostPlatform` nor `nixpkgs.system` is set".
+>
+> Keep `pkgs` out of the platform expression. The probe pass runs before a package set exists, and `nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system` is infinite recursion in plain NixOS as well.
 
 ## Metadata
 
